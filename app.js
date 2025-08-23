@@ -161,7 +161,9 @@ app.post('/ussd', async (req, res) => {
                     }
 
                     message = "Enter Ghana Card (e.g., GHA-123456789-01):";
-                    userSession.push({level: 11, message, fullName});
+                    // Instead of pushing a new state, update current state with fullName and next level
+                    const newState = {...currentState, level: 11, message, fullName};
+                    userSession[userSession.length - 1] = newState;
                     saveSession(sessionID, userSession);
                     break;
                 }
@@ -176,8 +178,7 @@ app.post('/ussd', async (req, res) => {
                         return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
                     }
 
-                    const previousState = userSession.find(s => s.level === 10);
-                    const fullName = previousState?.fullName || "Unknown";
+                    const fullName = currentState.fullName || "Unknown";
 
                     const existingUser = await User.findOne({msisdn});
                     if (existingUser) {
