@@ -119,7 +119,7 @@ app.post('/ussd', async (req, res) => {
         if (!userRecord) {
             message = "Welcome to GatePlus!\nRegister for verification to access loans.\nEnter your Full Name:";
         } else {
-            message = `Hi there!\n1. Apply for Loan\n2. Check Status\n3. Support`;
+            message = `Hi ${userRecord.fullName.split(' ')[0]}!\n1. Apply for Loan\n2. Check Status\n3. Support`;
         }
 
         const newState = {
@@ -228,15 +228,23 @@ app.post('/ussd', async (req, res) => {
                         saveSession(sessionID, userSession);
                     }
                 } else if (userData === "2") {
+                    let statusMsg = "";
+
+                    if (userRecord.status !== 'verified') {
+                        statusMsg = "Account under review.\n";
+                    }
+
                     const latestLoan = await Loan.findOne({msisdn}).sort({requestedAt: -1});
                     if (!latestLoan) {
-                        message = "No loan history.";
+                        statusMsg += "No loan history.";
                     } else {
-                        message = `Status: ${latestLoan.status.toUpperCase()}\nAmount: GHS ${latestLoan.amount}\nApplied: ${latestLoan.requestedAt.toLocaleDateString()}`;
+                        statusMsg += `Loan Status: ${latestLoan.status.toUpperCase()}\nAmount: GHS ${latestLoan.amount}\nApplied: ${latestLoan.requestedAt.toLocaleDateString()}`;
                     }
+
+                    message = statusMsg;
                     continueSession = false;
                 } else if (userData === "3") {
-                    message = "Support: Call 0800-GATEPLUS or WhatsApp +233 123 456 789";
+                    message = "Support: Call 0300-GATEPLUS or WhatsApp +233 123 456 789";
                     continueSession = false;
                 } else {
                     message = "Invalid option. Choose 1, 2, or 3.";
