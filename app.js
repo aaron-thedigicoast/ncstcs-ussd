@@ -148,16 +148,15 @@ app.post('/ussd', async (req, res) => {
     const currentState = userSession[userSession.length - 1];
     let message = "";
     let continueSession = true;
-    let fullName;
 
     try {
         // === REGISTRATION FLOW (new users) ===
         if (currentState.level >= 10 && currentState.level < 20) {
             switch (currentState.level) {
-                case 10:
-                    fullName = userData.trim();
-                    if (fullName.length < 2) {
-                        message = "Please enter a valid name.";
+                case 10: {
+                    const fullName = userData.trim();
+                    if (fullName.length < 2 || /\d/.test(fullName)) {
+                        message = "Please enter a valid name (no numbers).";
                         return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
                     }
 
@@ -165,8 +164,9 @@ app.post('/ussd', async (req, res) => {
                     userSession.push({level: 11, message, fullName});
                     saveSession(sessionID, userSession);
                     break;
+                }
 
-                case 11:
+                case 11: {
                     const ghanaCard = userData.trim().toUpperCase();
                     if (!isValidGhanaCard(ghanaCard)) {
                         message = "Invalid format. Use GHA-XXXXXXXXX-XX:";
@@ -176,8 +176,19 @@ app.post('/ussd', async (req, res) => {
                         return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
                     }
 
+                    const previousState = userSession.find(s => s.level === 10);
+                    const fullName = previousState?.fullName || "Unknown";
+
+                    const existingUser = await User.findOne({msisdn});
+                    if (existingUser) {
+                        message = "You are already registered.";
+                        continueSession = false;
+                        cache.del(sessionID);
+                        break;
+                    }
+
                     const newUser = new User({
-                        fullName: currentState.fullName,
+                        fullName,
                         ghanaCard,
                         msisdn,
                         status: 'pending_verification'
@@ -190,6 +201,7 @@ app.post('/ussd', async (req, res) => {
                     continueSession = false;
                     cache.del(sessionID);
                     break;
+                }
             }
             return respond(res, {sessionID, userID, message, continueSession, msisdn});
         }
@@ -204,7 +216,7 @@ app.post('/ussd', async (req, res) => {
         await logActivity(msisdn, 'menu', {level: currentState.level, input: userData});
 
         switch (currentState.level) {
-            case 1:
+            case 1: {
                 if (userData === "1") {
                     if (userRecord.status !== 'verified') {
                         message = "Account under review. Please wait for approval.";
@@ -230,8 +242,9 @@ app.post('/ussd', async (req, res) => {
                     continueSession = false;
                 }
                 break;
+            }
 
-            case 2:
+            case 2: {
                 const amount = parseFloat(userData);
                 if (isNaN(amount) || amount < 10 || amount > 1000) {
                     message = "Enter amount between GHS 10 and 1000:";
@@ -255,11 +268,13 @@ app.post('/ussd', async (req, res) => {
                 continueSession = false;
                 cache.del(sessionID);
                 break;
+            }
 
-            default:
+            default: {
                 message = "An error occurred.";
                 continueSession = false;
                 break;
+            }
         }
     } catch (err) {
         console.error("USSD Error:", err.message);
@@ -302,7 +317,6 @@ app.get('/user/:msisdn', async (req, res) => {
 
     respond(res, {user, loans, activity: logs});
 });
-
 
 // Start Server
 const PORT = process.env.PORT || 8000;
