@@ -148,13 +148,14 @@ app.post('/ussd', async (req, res) => {
     const currentState = userSession[userSession.length - 1];
     let message = "";
     let continueSession = true;
+    let fullName;
 
     try {
         // === REGISTRATION FLOW (new users) ===
         if (currentState.level >= 10 && currentState.level < 20) {
             switch (currentState.level) {
                 case 10:
-                    const fullName = userData.trim();
+                    fullName = userData.trim();
                     if (fullName.length < 2) {
                         message = "Please enter a valid name.";
                         return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
