@@ -1,345 +1,311 @@
+// app.js
 import express from "express";
-
+import mongoose from "mongoose";
 import cache from "memory-cache";
-
 import bodyParser from "body-parser";
-
 import cors from "cors";
+import dotenv from "dotenv";
 
-import axios from "axios";
+// Load environment variables
+dotenv.config({path: './.env'});
+
+// Validate required environment variables
+if (!process.env.MONGODB_URI) {
+    console.error('❌ Error: MONGODB_URI environment variable is required');
+    console.error('Please create a .env file with MONGODB_URI=your_mongodb_connection_string');
+    process.exit(1);
+}
 
 const app = express();
 
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({
-    extended: false
-}));
-
+app.use(bodyParser.urlencoded({extended: false}));
 app.use(cors());
-app.options('*', cors());
 
-app.get('/', (req, res) => res.status(200).send('Arkesel Rocks!!'));
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI);
 
-app.post('/ussd', ((req, res) => {
-    const {
-        sessionID,
-        userID,
-        newSession,
-        msisdn,
-        userData,
-        network,
-    } = req.body;
+// MongoDB connection event handlers
+mongoose.connection.on('connected', () => {
+    console.log('✅ Connected to MongoDB');
+});
+
+mongoose.connection.on('error', (err) => {
+    console.error('❌ MongoDB connection error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('⚠️  Disconnected from MongoDB');
+});
+
+// User Schema
+const userSchema = new mongoose.Schema({
+    fullName: {type: String, required: true},
+    ghanaCard: {
+        type: String,
+        required: true,
+        match: [/^GHA-\d{9}-\d{2}$/i, 'Invalid Ghana Card format']
+    },
+    msisdn: {type: String, required: true, unique: true, index: true},
+    status: {
+        type: String,
+        enum: ['pending_verification', 'verified', 'suspended'],
+        default: 'pending_verification'
+    },
+    verifiedAt: Date,
+    createdAt: {type: Date, default: Date.now}
+});
+
+const User = mongoose.model('User', userSchema);
+
+// Loan Schema
+const loanSchema = new mongoose.Schema({
+    userId: {type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true},
+    msisdn: {type: String, required: true},
+    amount: {type: Number, min: 10, max: 1000, required: true},
+    status: {
+        type: String,
+        enum: ['loan_pending', 'disbursed', 'rejected'],
+        default: 'loan_pending'
+    },
+    requestedAt: {type: Date, default: Date.now}
+});
+
+const Loan = mongoose.model('Loan', loanSchema);
+
+// Activity Log Schema
+const activityLogSchema = new mongoose.Schema({
+    msisdn: {type: String, required: true},
+    action: {type: String, required: true},
+    details: mongoose.Schema.Types.Mixed,
+    timestamp: {type: Date, default: Date.now}
+});
+
+const ActivityLog = mongoose.model('ActivityLog', activityLogSchema);
+
+// In-memory session cache
+const getSession = (sessionID) => cache.get(sessionID);
+const saveSession = (sessionID, data) => cache.put(sessionID, data, 1000 * 60 * 15); // 15 min
+
+// Helper: Validate Ghana Card
+const isValidGhanaCard = (card) => /^GHA-\d{9}-\d{2}$/i.test(card.trim());
+
+// Log user activity
+const logActivity = async (msisdn, action, details = {}) => {
+    await ActivityLog.create({msisdn, action, details});
+};
+
+// Response helper
+const respond = (res, data) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json(data);
+};
+
+// Root route
+app.get('/', (req, res) => {
+    res.status(200).send('Welcome to GatePlus - Your Trusted Loan Partner!');
+});
+
+// USSD Endpoint
+app.post('/ussd', async (req, res) => {
+    const {sessionID, userID, newSession, msisdn, userData} = req.body;
+
+    let userSession = getSession(sessionID);
 
     if (newSession) {
-        const message = "Welcome to Arkesel Voting Portal. Please vote for your favourite service from Arkesel" +
-            "\n1. SMS" +
-            "\n2. Voice" +
-            "\n3. Email" +
-            "\n4. USSD" +
-            "\n5. Payments";
-        const continueSession = true;
+        const userRecord = await User.findOne({msisdn});
+        let message;
 
-        // Keep track of the USSD state of the user and their session
-        const currentState = {
+        if (!userRecord) {
+            message = "Welcome to GatePlus!\nRegister for verification to access loans.\nEnter your Full Name:";
+        } else {
+            message = `Hi there!\n1. Apply for Loan\n2. Check Status\n3. Support`;
+        }
+
+        const newState = {
             sessionID,
             msisdn,
-            userData,
-            network,
-            newSession,
+            level: userRecord ? 1 : 10,
             message,
-            level: 1,
-            page: 1,
         };
 
-        let userResponseTracker = cache.get(sessionID);
+        saveSession(sessionID, [newState]);
+        await logActivity(msisdn, 'session_start', {isNew: !userRecord});
 
-        !userResponseTracker
-            ? userResponseTracker = [{...currentState}]
-            : userResponseTracker.push({...currentState});
-
-        cache.put(sessionID, userResponseTracker);
-
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(200).json({
-            userID,
-            sessionID,
-            message,
-            continueSession,
-            msisdn
-        });
+        return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
     }
 
-    const userResponseTracker = cache.get(sessionID);
-
-    if (!userResponseTracker) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(200).json({
-            userID,
+    if (!userSession || userSession.length === 0) {
+        return respond(res, {
             sessionID,
-            message: 'Error! Please dial code again!',
+            userID,
+            message: "Session expired. Please restart.",
             continueSession: false,
             msisdn
         });
     }
 
-    const lastResponse = userResponseTracker[userResponseTracker.length - 1];
+    const currentState = userSession[userSession.length - 1];
+    let message = "";
+    let continueSession = true;
 
-    let message = "Bad Option";
-    let continueSession = false;
+    try {
+        // === REGISTRATION FLOW (new users) ===
+        if (currentState.level >= 10 && currentState.level < 20) {
+            switch (currentState.level) {
+                case 10:
+                    const fullName = userData.trim();
+                    if (fullName.length < 2) {
+                        message = "Please enter a valid name.";
+                        return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
+                    }
 
-    if (lastResponse.level === 1) {
-        if (["2", "3", "4", "5"].includes(userData)) {
-            message = "Thank you for voting!";
-            continueSession = false;
-        } else if (userData === '1') {
-            message = "For SMS which of the features do you like best?" +
-                "\n1. From File" +
-                "\n2. Quick SMS" +
-                "\n\n #. Next Page";
+                    message = "Enter Ghana Card (e.g., GHA-123456789-01):";
+                    userSession.push({level: 11, message, fullName});
+                    saveSession(sessionID, userSession);
+                    break;
 
-            continueSession = true;
+                case 11:
+                    const ghanaCard = userData.trim().toUpperCase();
+                    if (!isValidGhanaCard(ghanaCard)) {
+                        message = "Invalid format. Use GHA-XXXXXXXXX-XX:";
+                        const retry = {...currentState, message};
+                        userSession[userSession.length - 1] = retry;
+                        saveSession(sessionID, userSession);
+                        return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
+                    }
 
-            const currentState = {
-                sessionID,
-                userID,
-                level: 2,
-                msisdn,
-                message,
-                userData,
-                network,
-                newSession,
-                page: 1,
-            };
+                    const newUser = new User({
+                        fullName: currentState.fullName,
+                        ghanaCard,
+                        msisdn,
+                        status: 'pending_verification'
+                    });
 
-            userResponseTracker.push({...currentState});
-            cache.put(sessionID, userResponseTracker);
+                    await newUser.save();
+                    await logActivity(msisdn, 'register', {fullName, ghanaCard});
+
+                    message = `Thank you, ${newUser.fullName}!\nVerification pending. You'll be notified.`;
+                    continueSession = false;
+                    cache.del(sessionID);
+                    break;
+            }
+            return respond(res, {sessionID, userID, message, continueSession, msisdn});
         }
-    } else if (lastResponse.level === 2) {
-        if (lastResponse.page === 1 && userData === '#') {
-            message = "For SMS which of the features do you like best?" +
-                "\n3. Bulk SMS" +
-                "\n\n*. Go Back" +
-                "\n#. Next Page";
 
-            continueSession = true;
-
-            const currentState = {
-                sessionID,
-                userID,
-                level: 2,
-                msisdn,
-                message,
-                userData,
-                network,
-                newSession,
-                page: 2
-            };
-
-            userResponseTracker.push({...currentState});
-            cache.put(sessionID, userResponseTracker);
-
-        } else if (lastResponse.page === 2 && userData === '#') {
-            // Useful Resources
-            message = "For SMS which of the features do you like best?" +
-                "\n4. SMS To Contacts" +
-                "\n5. Enter your amount to vote with" +
-                "\n\n*. Go Back";
-
-            continueSession = true;
-
-            const currentState = {
-                sessionID,
-                userID,
-                level: 2,
-                msisdn,
-                message,
-                userData,
-                network,
-                newSession,
-                page: 3,
-            };
-
-            userResponseTracker.push({...currentState});
-            cache.put(sessionID, userResponseTracker);
-        } else if (lastResponse.page === 3 && userData === '*') {
-            message = "For SMS which of the features do you like best?" +
-                "\n3. Bulk SMS" +
-                "\n\n*. Go Back" +
-                "\n#. Next Page";
-
-            continueSession = true;
-
-            const currentState = {
-                sessionID,
-                userID,
-                level: 2,
-                msisdn,
-                message,
-                userData,
-                network,
-                newSession,
-                page: 2
-            };
-
-            userResponseTracker.push({...currentState});
-            cache.put(sessionID, userResponseTracker);
-        } else if (lastResponse.page === 2 && userData === '*') {
-            message = "For SMS which of the features do you like best?" +
-                "\n1. From File" +
-                "\n2. Quick SMS" +
-                "\n\n #. Next Page";
-
-            continueSession = true;
-
-            const currentState = {
-                sessionID,
-                userID,
-                level: 2,
-                msisdn,
-                message,
-                userData,
-                network,
-                newSession,
-                page: 1,
-            };
-
-            userResponseTracker.push({...currentState});
-            cache.put(sessionID, userResponseTracker);
-        } else if (["1", "2", "3", "4"].includes(userData)) {
-            message = "Thank you for voting!";
-            continueSession = false;
-        } else if (userData === "5") {
-            message = "Enter your amount to pay below: ";
-            continueSession = true;
-
-            const currentState = {
-                sessionID,
-                userID,
-                level: 3,
-                msisdn,
-                message,
-                userData,
-                network,
-                newSession,
-                page: 1,
-            };
-
-            userResponseTracker.push({...currentState});
-            cache.put(sessionID, userResponseTracker);
-        } else {
-            message = "Bad choice!";
-            continueSession = false;
+        // === EXISTING USER FLOW ===
+        const userRecord = await User.findOne({msisdn});
+        if (!userRecord) {
+            message = "User not found. Please restart.";
+            return respond(res, {sessionID, userID, message, continueSession: false, msisdn});
         }
-    } else if (lastResponse.level === 3) {
-        if (!isNaN(userData) && parseFloat(userData) > 0) {
-            const uniqueRef = `${Date.now() + (Math.random() * 100)}`;
-            const paymentRequest = {
-                account_number: msisdn,
-                merchant_reference: uniqueRef,
-                channel: "mobile-money",
-                provider: network.toLowerCase(),
-                transaction_type: "debit",
-                amount: userData,
-                purpose: "voting payment",
-                service_name: "arkesel voting",
-                currency: "GHS",
-            };
-            const apiKey = 'xxxxxxxxxxxxxxxxxxxxxxxx=';
-            const url = 'https://payment.arkesel.com/api/v1/payment/charge/initiate';
 
-            axios({
-                method: 'post',
-                url,
-                data: {...paymentRequest},
-                headers: {
-                    'api-key': apiKey,
+        await logActivity(msisdn, 'menu', {level: currentState.level, input: userData});
+
+        switch (currentState.level) {
+            case 1:
+                if (userData === "1") {
+                    if (userRecord.status !== 'verified') {
+                        message = "Account under review. Please wait for approval.";
+                        continueSession = false;
+                    } else {
+                        message = "Enter loan amount (GHS 10 - 1000):";
+                        userSession.push({level: 2, message});
+                        saveSession(sessionID, userSession);
+                    }
+                } else if (userData === "2") {
+                    const latestLoan = await Loan.findOne({msisdn}).sort({requestedAt: -1});
+                    if (!latestLoan) {
+                        message = "No loan history.";
+                    } else {
+                        message = `Status: ${latestLoan.status.toUpperCase()}\nAmount: GHS ${latestLoan.amount}\nApplied: ${latestLoan.requestedAt.toLocaleDateString()}`;
+                    }
+                    continueSession = false;
+                } else if (userData === "3") {
+                    message = "Support: Call 0800-GATEPLUS or WhatsApp +233 123 456 789";
+                    continueSession = false;
+                } else {
+                    message = "Invalid option. Choose 1, 2, or 3.";
+                    continueSession = false;
                 }
-            }).then(res => res.data).then(data => {
-                console.log({data}, 'Initiate payment');
-                // Save into DB
-                // If it was successful then send message
-                message = `Kindly enter your pin for the approval of GHS ${userData} debiting of your Mobile money account. We are charging you for voting. Dial *170# to visit approvals if one doesn't pop up!`;
+                break;
+
+            case 2:
+                const amount = parseFloat(userData);
+                if (isNaN(amount) || amount < 10 || amount > 1000) {
+                    message = "Enter amount between GHS 10 and 1000:";
+                    const retry = {...currentState, message};
+                    userSession[userSession.length - 1] = retry;
+                    saveSession(sessionID, userSession);
+                    return respond(res, {sessionID, userID, message, continueSession: true, msisdn});
+                }
+
+                const loan = new Loan({
+                    userId: userRecord._id,
+                    msisdn,
+                    amount,
+                    status: 'loan_pending'
+                });
+
+                await loan.save();
+                await logActivity(msisdn, 'loan_request', {amount, loanId: loan._id});
+
+                message = `Loan request for GHS ${amount} received!\nProcessing... Funds will be sent shortly.`;
                 continueSession = false;
-            });
+                cache.del(sessionID);
+                break;
 
-            message = `Kindly enter your pin for the approval of GHS ${userData} debiting of your Mobile money account. We are charging you for voting. Dial *170# to visit approvals if one doesn't pop up!`;
-            continueSession = false;
-
-            res.setHeader('Content-Type', 'application/json');
-            return res.status(200).json({
-                userID,
-                sessionID,
-                message,
-                continueSession,
-                msisdn
-            });
-
-        } else {
-            message = "You entered an invalid amount: ";
-            continueSession = true;
-
-            const currentState = {
-                sessionID,
-                userID,
-                level: 3,
-                msisdn,
-                message,
-                userData,
-                network,
-                newSession,
-                page: 1,
-            };
-
-            userResponseTracker.push({...currentState});
-            cache.put(sessionID, userResponseTracker);
+            default:
+                message = "An error occurred.";
+                continueSession = false;
+                break;
         }
+    } catch (err) {
+        console.error("USSD Error:", err.message);
+        message = "Service temporarily unavailable. Try later.";
+        continueSession = false;
+        cache.del(sessionID);
     }
 
-    res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({
-        userID,
-        sessionID,
-        message,
-        continueSession,
-        msisdn
-    });
-}));
+    respond(res, {sessionID, userID, message, continueSession, msisdn});
+});
 
-// Callback URL for payment
-app.get('/payments/arkesel/callback', ((req, res) => {
-    console.log({query: res.query}, 'Callback for Arkesel payment');
-    // Verify the payment...
+// ✅ Admin: Approve user verification
+app.get('/admin/approve/:msisdn', async (req, res) => {
+    const {msisdn} = req.params;
 
-    res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({
-        status: 'success',
-        message: 'arkesel payment callback called'
-    });
-}));
+    const user = await User.findOne({msisdn});
+    if (!user) {
+        return respond(res, {status: 'error', message: 'User not found'});
+    }
 
-// Verify payment
-app.get('/payments/verify', ((req, res) => {
-    const apiKey = 'XXXXXXXXXXXXXXXXXXXXXXX=';
-    const transRef = 'T634E3e8cac8175';
-    const url = `https://payment.arkesel.com/api/v1/verify/transaction/${transRef}`;
+    user.status = 'verified';
+    user.verifiedAt = new Date();
+    await user.save();
 
-    axios({
-        method: 'get',
-        url,
-        headers: {
-            'api-key': apiKey,
-        }
-    }).then(res => res.data).then(data => {
-        console.log({data}, 'Verify payment');
-        // Update payment status in DB
-    });
-    res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({
-        status: 'success',
-        message: 'payment verification called'
-    });
-}));
+    await logActivity(msisdn, 'admin_action', {action: 'approved'});
 
-app.listen(8000, function () {
-    console.log('Arkesel USSD app listening on 8000!');
+    respond(res, {status: 'success', message: `User ${msisdn} verified!`});
+});
+
+// ✅ View user profile (for admin/debug)
+app.get('/user/:msisdn', async (req, res) => {
+    const {msisdn} = req.params;
+    const user = await User.findOne({msisdn});
+    const loans = await Loan.find({msisdn}).sort({requestedAt: -1}).limit(5);
+    const logs = await ActivityLog.find({msisdn}).sort({timestamp: -1}).limit(10);
+
+    if (!user) {
+        return respond(res, {error: "User not found"});
+    }
+
+    respond(res, {user, loans, activity: logs});
+});
+
+
+// Start Server
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => {
+    console.log(`✅ GatePlus USSD Service running on port ${PORT}`);
+    console.log(`🔗 MongoDB: ${process.env.MONGODB_URI}`);
 });
