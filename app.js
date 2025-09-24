@@ -24,7 +24,7 @@ app.use(cors());
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
-    dbName: "ncstcs"
+    dbName: "ncstcsdb"
 });
 
 // MongoDB connection event handlers
