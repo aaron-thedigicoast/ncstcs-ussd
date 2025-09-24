@@ -49,6 +49,7 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     role: { type: String, enum: ["admin", "agency", "operator", "courier"], default: "courier" },
     name: { type: String },
+    phone: { type: String, unique: true, sparse: true },
     email: { type: String, unique: true, sparse: true },
     dvlaNumber: { type: String, unique: true, sparse: true },
     ghanaCardNumber: { type: String, unique: true, sparse: true },
@@ -67,6 +68,19 @@ const saveSession = (sessionID, data) => cache.put(sessionID, data, 1000 * 60 * 
 const isValidGhanaCard = (card) => /^GHA-\d{9}-\d{2}$/i.test(card.trim());
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 const isValidDVLA = (dvla) => /^[A-Za-z0-9\-]{5,}$/.test(dvla.trim());
+// Ghana phone validation: accepts 024XXXXXXX, 054XXXXXXX, +23324XXXXXXX, 23324XXXXXXX
+const isValidPhone = (phone) => {
+  const p = (phone || "").toString().trim();
+  return /^(?:0|\+?233)\d{9}$/.test(p);
+};
+// Normalize phone to E.164 +233XXXXXXXXX
+const normalizePhone = (phone) => {
+  const p = (phone || "").toString().trim();
+  if (/^0\d{9}$/.test(p)) return "+233" + p.slice(1);
+  if (/^233\d{9}$/.test(p)) return "+" + p;
+  if (/^\+233\d{9}$/.test(p)) return p;
+  return p;
+};
 
 const respond = (res, data) => {
     res.setHeader('Content-Type', 'application/json');
@@ -95,16 +109,45 @@ app.post('/ussd', async (req, res) => {
 
   // Start or restart session
   if (newSession || !userSession) {
-    const message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
-    userSession = [{ level: 0, message }];
+    // Try to identify user by msisdn phone
+    let message = "";
+    try {
+      const phone = normalizePhone(msisdn || "");
+      const existing = phone ? await User.findOne({ phone }) : null;
+      if (existing) {
+        const displayName = existing.name || existing.username || existing.phone || "Courier";
+        message = `Hi ${displayName}\n1. View My Details\n2. Lookup Courier\n3. Cancel`;
+        userSession = [{ level: 0, message, loggedIn: true, userRef: existing._id.toString() }];
+      } else {
+        message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+        userSession = [{ level: 0, message, loggedIn: false }];
+      }
+    } catch (e) {
+      message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+      userSession = [{ level: 0, message, loggedIn: false }];
+    }
     saveSession(sessionID, userSession);
     return respond(res, { sessionID, userID, message, continueSession: true, msisdn });
   }
 
   // Navigation: 0 = Home, 9 = Back
   if (userData === "0") {
-    const message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
-    userSession = [{ level: 0, message }];
+    // Rebuild the appropriate home menu depending on login status
+    const loggedIn = userSession[0]?.loggedIn;
+    let message = "";
+    if (loggedIn) {
+      try {
+        const me = await User.findById(userSession[0]?.userRef);
+        const displayName = me?.name || me?.username || me?.phone || "Courier";
+        message = `Hi ${displayName}\n1. View My Details\n2. Lookup Courier\n3. Cancel`;
+      } catch {
+        message = "Hi Courier\n1. View My Details\n2. Lookup Courier\n3. Cancel";
+      }
+      userSession = [{ level: 0, message, loggedIn: true, userRef: userSession[0]?.userRef }];
+    } else {
+      message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+      userSession = [{ level: 0, message, loggedIn: false }];
+    }
     return reply(message, true);
   }
   if (userData === "9") {
@@ -118,18 +161,45 @@ app.post('/ussd', async (req, res) => {
   try {
     switch (current.level) {
       case 0: {
-        if (userData === "1") {
-          message = "Enter Full Name:";
-          userSession.push({ level: 10, message });
-          return reply(message, true);
-        } else if (userData === "2") {
-          message = "Enter DVLA or Ghana Card Number:";
-          userSession.push({ level: 30, message });
-          return reply(message, true);
+        if (current.loggedIn) {
+          if (userData === "1") {
+            // View My Details
+            try {
+              const me = await User.findById(userSession[0]?.userRef);
+              if (!me) {
+                message = "Account not found.";
+              } else {
+                const summary = `Name: ${me.name || "-"}\nUsername: ${me.username}\nPhone: ${me.phone || "-"}\nEmail: ${me.email || "-"}\nDVLA: ${me.dvlaNumber || "-"}\nGhanaCard: ${me.ghanaCardNumber || "-"}`;
+                message = summary;
+              }
+            } catch {
+              message = "Unable to fetch details at the moment.";
+            }
+            cache.del(sessionID);
+            return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
+          } else if (userData === "2") {
+            message = "Enter DVLA or Ghana Card Number:";
+            userSession.push({ level: 30, message });
+            return reply(message, true);
+          } else {
+            message = "Session ended.";
+            cache.del(sessionID);
+            return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
+          }
         } else {
-          message = "Session ended.";
-          cache.del(sessionID);
-          return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
+          if (userData === "1") {
+            message = "Enter Full Name:";
+            userSession.push({ level: 10, message });
+            return reply(message, true);
+          } else if (userData === "2") {
+            message = "Enter DVLA or Ghana Card Number:";
+            userSession.push({ level: 30, message });
+            return reply(message, true);
+          } else {
+            message = "Session ended.";
+            cache.del(sessionID);
+            return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
+          }
         }
       }
 
@@ -158,11 +228,29 @@ app.post('/ussd', async (req, res) => {
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
-        message = "Enter Email:";
+        message = "Enter Phone Number (e.g., 024XXXXXXX):";
         userSession.push({ level: 12, name: current.name, username, message });
         return reply(message);
       }
-      case 12: { // Email
+      case 12: { // Phone
+        const rawPhone = (userData || "").trim();
+        if (!isValidPhone(rawPhone)) {
+          message = "Invalid phone. Enter Phone Number (e.g., 024XXXXXXX):";
+          userSession[userSession.length - 1] = { ...current, message };
+          return reply(message);
+        }
+        const phone = normalizePhone(rawPhone);
+        const exists = await User.findOne({ phone });
+        if (exists) {
+          message = "Phone already registered. Enter a different Phone Number:";
+          userSession[userSession.length - 1] = { ...current, message };
+          return reply(message);
+        }
+        message = "Enter Email:";
+        userSession.push({ level: 13, name: current.name, username: current.username, phone, message });
+        return reply(message);
+      }
+      case 13: { // Email
         const email = (userData || "").trim();
         if (!isValidEmail(email)) {
           message = "Invalid email. Enter Email:";
@@ -176,10 +264,10 @@ app.post('/ussd', async (req, res) => {
           return reply(message);
         }
         message = "Create Password:";
-        userSession.push({ level: 13, name: current.name, username: current.username, email, message });
+        userSession.push({ level: 14, name: current.name, username: current.username, phone: current.phone, email, message });
         return reply(message);
       }
-      case 13: { // Password
+      case 14: { // Password
         const password = (userData || "").trim();
         if (password.length < 6) {
           message = "Password too short (min 6). Create Password:";
@@ -187,10 +275,10 @@ app.post('/ussd', async (req, res) => {
           return reply(message);
         }
         message = "Confirm Password:";
-        userSession.push({ ...current, level: 14, password, message });
+        userSession.push({ ...current, level: 15, password, message });
         return reply(message);
       }
-      case 14: { // Confirm Password
+      case 15: { // Confirm Password
         const confirm = (userData || "").trim();
         if (confirm !== current.password) {
           message = "Passwords do not match. Create Password:";
@@ -200,10 +288,10 @@ app.post('/ussd', async (req, res) => {
           return reply(message);
         }
         message = "Enter DVLA License Number:";
-        userSession.push({ ...current, level: 15, message });
+        userSession.push({ ...current, level: 16, message });
         return reply(message);
       }
-      case 15: { // DVLA Number
+      case 16: { // DVLA Number
         const dvlaNumber = (userData || "").trim().toUpperCase();
         if (!isValidDVLA(dvlaNumber)) {
           message = "Invalid DVLA number. Enter DVLA License Number:";
@@ -217,10 +305,10 @@ app.post('/ussd', async (req, res) => {
           return reply(message);
         }
         message = "Enter Ghana Card (e.g., GHA-123456789-01):";
-        userSession.push({ ...current, level: 16, dvlaNumber, message });
+        userSession.push({ ...current, level: 17, dvlaNumber, message });
         return reply(message);
       }
-      case 16: { // Ghana Card Number
+      case 17: { // Ghana Card Number
         const ghanaCardNumber = (userData || "").trim().toUpperCase();
         if (!isValidGhanaCard(ghanaCardNumber)) {
           message = "Invalid format. Use GHA-XXXXXXXXX-XX:";
@@ -235,7 +323,7 @@ app.post('/ussd', async (req, res) => {
         }
 
         // Create user
-        const { name, username, email, password, dvlaNumber } = current;
+        const { name, username, phone, email, password, dvlaNumber } = current;
         const hashed = await bcrypt.hash(password, 10);
         try {
           await User.create({
@@ -243,6 +331,7 @@ app.post('/ussd', async (req, res) => {
             password: hashed,
             role: "courier",
             name,
+            phone,
             email,
             dvlaNumber,
             ghanaCardNumber
@@ -272,7 +361,7 @@ app.post('/ussd', async (req, res) => {
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
-        const summary = `Name: ${user.name || "-"}\nUsername: ${user.username}\nEmail: ${user.email || "-"}\nDVLA: ${user.dvlaNumber || "-"}\nGhanaCard: ${user.ghanaCardNumber || "-"}`;
+        const summary = `Name: ${user.name || "-"}\nUsername: ${user.username}\nPhone: ${user.phone || "-"}\nEmail: ${user.email || "-"}\nDVLA: ${user.dvlaNumber || "-"}\nGhanaCard: ${user.ghanaCardNumber || "-"}`;
         message = `${summary}`;
         cache.del(sessionID);
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
@@ -306,6 +395,7 @@ app.get('/courier/lookup', async (req, res) => {
   return res.json({
     username: user.username,
     name: user.name,
+    phone: user.phone,
     email: user.email,
     dvlaNumber: user.dvlaNumber,
     ghanaCardNumber: user.ghanaCardNumber,
