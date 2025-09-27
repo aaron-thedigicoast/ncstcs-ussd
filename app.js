@@ -181,7 +181,7 @@ app.post('/ussd', async (req, res) => {
             cache.del(sessionID);
             return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
           } else if (userData === "2") {
-            message = "Enter DVLA or Ghana Card Number:";
+            message = "Enter License or Ghana Card Number:";
             userSession.push({ level: 30, message });
             return reply(message, true);
           } else {
@@ -192,11 +192,11 @@ app.post('/ussd', async (req, res) => {
         } else {
           if (userData === "1") {
             // Show info screen before sign-up
-            message = "To register, you'll need:\n\nDVLA License Number\nGhana Card (e.g., GHA-123456789-01)\n\nPress 1 to continue";
+            message = "To register, you'll need:\n\nLicense Number\nGhana Card (e.g., GHA-123456789-01)\n\nPress 1 to continue";
             userSession.push({ level: 5, message });
             return reply(message, true);
           } else if (userData === "2") {
-            message = "Enter DVLA or Ghana Card Number:";
+            message = "Enter License or Ghana Card Number:";
             userSession.push({ level: 30, message });
             return reply(message, true);
           } else {
@@ -306,13 +306,13 @@ app.post('/ussd', async (req, res) => {
       case 16: { // DVLA Number
         const dvlaNumber = (userData || "").trim().toUpperCase();
         if (!isValidDVLA(dvlaNumber)) {
-          message = "Invalid DVLA number. Enter Driver's License Number:";
+          message = "Invalid Driver's License number. Enter Driver's License Number:";
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
         const exists = await User.findOne({ dvlaNumber });
         if (exists) {
-          message = "DVLA already registered. Enter a different Driver's License Number:";
+          message = "License already registered. Enter a different Driver's License Number:";
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
@@ -353,7 +353,7 @@ app.post('/ussd', async (req, res) => {
           cache.del(sessionID);
           return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
         }
-        message = "Registration successful!\n\nAn SMS/Email will be sent to your phone/email shortly.\n#. Next  \n\n\n Please follow the link in the SMS/Email to upload your:\nDVLA License\nGhana Card";
+        message = "Registration successful!\nAn SMS/Email will be sent to your phone/email shortly.\n#. Next  \n\n\n Please follow the link in the SMS/Email to upload your:\nDVLA License\nGhana Card";
         cache.del(sessionID);
 
         sendEmailAction({ from: process.env.GMAIL_FROM, to: email, subject: "PCRS Registration Successful", text: message, html: generateEmailHtml(username) });
