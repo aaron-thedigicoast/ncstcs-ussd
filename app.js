@@ -54,8 +54,8 @@ const userSchema = new mongoose.Schema(
     dvlaNumber: { type: String, unique: true, sparse: true },
     ghanaCardNumber: { type: String, unique: true, sparse: true },
     dateOfBirth: { type: Date },
-    compliance: { type: boolean, default: false },
-    complianceDate: {
+    compliant: { type: boolean, default: false },
+    complianceData: {
       type: {
         dvla: {
           type: string
