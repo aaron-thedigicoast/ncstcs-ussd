@@ -381,7 +381,7 @@ app.post('/ussd', async (req, res) => {
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
-        const summary = `Name: ${user.name || "-"}\nCompliant: ${me.isCompliant ? "Yes" : "No"}\nPhone: ${user.phone || "-"}\nEmail: ${user.email || "-"}\nDVLA: ${user.dvlaNumber || "-"}\nGhanaCard: ${user.ghanaCardNumber || "-"}`;
+        const summary = `Name: ${user.name || "-"}\nCompliant: ${user.isCompliant ? "Yes" : "No"}\nPhone: ${user.phone || "-"}\nEmail: ${user.email || "-"}\nDVLA: ${user.dvlaNumber || "-"}\nGhanaCard: ${user.ghanaCardNumber || "-"}`;
         message = `${summary}`;
         cache.del(sessionID);
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
