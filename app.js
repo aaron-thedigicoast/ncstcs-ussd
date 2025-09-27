@@ -53,7 +53,8 @@ const userSchema = new mongoose.Schema(
     email: { type: String, unique: true, sparse: true },
     dvlaNumber: { type: String, unique: true, sparse: true },
     ghanaCardNumber: { type: String, unique: true, sparse: true },
-    dateOfBirth: { type: Date }
+    dateOfBirth: { type: Date },
+    compliance: {type: boolean, default: false}
   },
   { timestamps: true }
 );
