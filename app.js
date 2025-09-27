@@ -6,6 +6,8 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
+import { sendEmailAction, generateEmailHtml } from "./send-email.js";
+
 
 // Load environment variables
 dotenv.config({ path: './.env' });
@@ -361,8 +363,10 @@ app.post('/ussd', async (req, res) => {
           cache.del(sessionID);
           return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
         }
-        message = "Registration successful!\n\nAn SMS will be sent to your phone shortly. Please follow the link in the SMS to upload your:\nDVLA License\nGhana Card";
+        message = "Registration successful!\n\nAn SMS/Email will be sent to your phone/email shortly.\n#. Next  \n\n\n Please follow the link in the SMS/Email to upload your:\nDVLA License\nGhana Card";
         cache.del(sessionID);
+
+        sendEmailAction({ from: process.env.GMAIL_FROM, to: email, subject: "PCRS Registration Successful", text: message, html: generateEmailHtml(username) });
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
       }
 
