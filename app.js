@@ -93,7 +93,7 @@ const respond = (res, data) => {
 
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).send('Welcome to NCSTCS USSD Service');
+  res.status(200).send('Welcome to PCRS USSD Service');
 });
 
 // USSD Endpoint
@@ -119,11 +119,11 @@ app.post('/ussd', async (req, res) => {
         message = `Hi ${displayName}\n1. View My Details\n2. Lookup Courier\n3. Cancel`;
         userSession = [{ level: 0, message, loggedIn: true, userRef: existing._id.toString() }];
       } else {
-        message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+        message = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
         userSession = [{ level: 0, message, loggedIn: false }];
       }
     } catch (e) {
-      message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+      message = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
       userSession = [{ level: 0, message, loggedIn: false }];
     }
     saveSession(sessionID, userSession);
@@ -145,7 +145,7 @@ app.post('/ussd', async (req, res) => {
       }
       userSession = [{ level: 0, message, loggedIn: true, userRef: userSession[0]?.userRef }];
     } else {
-      message = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+      message = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
       userSession = [{ level: 0, message, loggedIn: false }];
     }
     return reply(message, true);
@@ -188,8 +188,9 @@ app.post('/ussd', async (req, res) => {
           }
         } else {
           if (userData === "1") {
-            message = "Enter Full Name:";
-            userSession.push({ level: 10, message });
+            // Show info screen before sign-up
+            message = "📄 To register, you'll need:\n\n• DVLA License Number\n• Ghana Card (e.g., GHA-123456789-01)\n\nWe'll also collect:\n• Full Name\n• Username\n• Phone\n• Email\n• Password\n\nPress 1 to continue";
+            userSession.push({ level: 5, message });
             return reply(message, true);
           } else if (userData === "2") {
             message = "Enter DVLA or Ghana Card Number:";
@@ -201,6 +202,14 @@ app.post('/ussd', async (req, res) => {
             return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
           }
         }
+      }
+
+      // Info screen before sign-up
+      case 5: {
+        // Proceed to name entry regardless of input (USSD convention)
+        message = "Enter Full Name:";
+        userSession.push({ level: 10, message });
+        return reply(message, true);
       }
 
       // Sign Up Flow
@@ -341,7 +350,7 @@ app.post('/ussd', async (req, res) => {
           cache.del(sessionID);
           return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
         }
-        message = "Registration successful!";
+        message = "Registration successful!\n\nAn SMS will be sent to your phone shortly. Please follow the link in the SMS to upload your:\n• DVLA License\n• Ghana Card";
         cache.del(sessionID);
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
       }
@@ -369,7 +378,7 @@ app.post('/ussd', async (req, res) => {
 
       default: {
         message = "Session reset.";
-        const home = "NCSTCS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+        const home = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
         userSession = [{ level: 0, message: home }];
         return reply(home);
       }
@@ -409,6 +418,6 @@ app.get('/courier/lookup', async (req, res) => {
 // =========================
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
-  console.log(`✅ NCSTCS Courier USSD running on port ${PORT}`);
+  console.log(`✅ PCRS Courier USSD running on port ${PORT}`);
   console.log(`🔗 MongoDB: ${process.env.MONGODB_URI}`);
 });
