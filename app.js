@@ -218,8 +218,8 @@ app.post('/ussd', async (req, res) => {
       // Sign Up Flow
       case 10: { // Full Name
         const name = (userData || "").trim();
-        if (!name || name.length < 3 || /\d/.test(name)) {
-          message = "Invalid name. Enter Full Name:";
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          message = "Invalid email. Enter a valid Email:";
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
