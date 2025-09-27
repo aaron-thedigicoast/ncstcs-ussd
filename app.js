@@ -189,7 +189,7 @@ app.post('/ussd', async (req, res) => {
         } else {
           if (userData === "1") {
             // Show info screen before sign-up
-            message = "To register, you'll need:\n\n• DVLA License Number\n• Ghana Card (e.g., GHA-123456789-01)\n\nWe'll also collect:\n• Full Name\n• Username\n• Phone\n• Email\n• Password\n\nPress 1 to continue";
+            message = "To register, you'll need:\n\nDVLA License Number\nGhana Card (e.g., GHA-123456789-01)\n\nPress 1 to continue";
             userSession.push({ level: 5, message });
             return reply(message, true);
           } else if (userData === "2") {
