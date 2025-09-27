@@ -180,7 +180,7 @@ app.post('/ussd', async (req, res) => {
               if (!me) {
                 message = "Account not found.";
               } else {
-                const summary = `Name: ${me.name || "-"}\nPhone: ${me.phone || "-"}\nEmail: ${me.email || "-"}\nDVLA: ${me.dvlaNumber || "-"}\nGhanaCard: ${me.ghanaCardNumber || "-"}\nCompliant: ${me.isCompliant ? "Yes" : "No"}`;
+                const summary = `Name: ${me.name || "-"}\nCompliant: ${me.isCompliant ? "Yes" : "No"}\nPhone: ${me.phone || "-"}\nEmail: ${me.email || "-"}\nDVLA: ${me.dvlaNumber || "-"}\nGhanaCard: ${me.ghanaCardNumber || "-"}`;
                 message = summary;
               }
             } catch {
@@ -381,7 +381,7 @@ app.post('/ussd', async (req, res) => {
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
-        const summary = `Name: ${user.name || "-"}Phone: ${user.phone || "-"}\nEmail: ${user.email || "-"}\nDVLA: ${user.dvlaNumber || "-"}\nGhanaCard: ${user.ghanaCardNumber || "-"}\nCompliant: ${user.isCompliant ? "Yes" : "No"}`;
+        const summary = `Name: ${user.name || "-"}\nCompliant: ${me.isCompliant ? "Yes" : "No"}\nPhone: ${user.phone || "-"}\nEmail: ${user.email || "-"}\nDVLA: ${user.dvlaNumber || "-"}\nGhanaCard: ${user.ghanaCardNumber || "-"}`;
         message = `${summary}`;
         cache.del(sessionID);
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
