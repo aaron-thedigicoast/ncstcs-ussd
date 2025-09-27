@@ -422,6 +422,9 @@ app.get('/courier/lookup', async (req, res) => {
 // Start Server
 // =========================
 const PORT = process.env.PORT || 8000;
+
+console.log(process.env.GMAIL_FROM);
+console.log(process.env.GMAIL_APP_PASSWORD);
 app.listen(PORT, () => {
   console.log(`✅ PCRS Courier Compliance Service USSD running on port ${PORT}`);
   console.log(`🔗 MongoDB: ${process.env.MONGODB_URI}`);
