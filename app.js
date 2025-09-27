@@ -12,8 +12,8 @@ dotenv.config({ path: './.env' });
 
 // Validate required environment variables
 if (!process.env.MONGODB_URI) {
-    console.error('❌ Error: MONGODB_URI environment variable is required');
-    process.exit(1);
+  console.error('❌ Error: MONGODB_URI environment variable is required');
+  process.exit(1);
 }
 
 const app = express();
@@ -24,18 +24,18 @@ app.use(cors());
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
-    dbName: "ncstcsdb"
+  dbName: "ncstcsdb"
 });
 
 // MongoDB connection event handlers
 mongoose.connection.on('connected', () => {
-    console.log('✅ Connected to MongoDB');
+  console.log('✅ Connected to MongoDB');
 });
 mongoose.connection.on('error', (err) => {
-    console.error('❌ MongoDB connection error:', err.message);
+  console.error('❌ MongoDB connection error:', err.message);
 });
 mongoose.connection.on('disconnected', () => {
-    console.log('⚠️  Disconnected from MongoDB');
+  console.log('⚠️  Disconnected from MongoDB');
 });
 
 // =========================
@@ -54,7 +54,17 @@ const userSchema = new mongoose.Schema(
     dvlaNumber: { type: String, unique: true, sparse: true },
     ghanaCardNumber: { type: String, unique: true, sparse: true },
     dateOfBirth: { type: Date },
-    compliance: {type: boolean, default: false}
+    compliance: { type: boolean, default: false },
+    complianceDate: {
+      type: {
+        dvla: {
+          type: string
+        },
+        ghanaCard: {
+          type: string
+        }
+      }
+    },
   },
   { timestamps: true }
 );
@@ -84,8 +94,8 @@ const normalizePhone = (phone) => {
 };
 
 const respond = (res, data) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.status(200).json(data);
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).json(data);
 };
 
 // =========================
