@@ -54,14 +54,14 @@ const userSchema = new mongoose.Schema(
     dvlaNumber: { type: String, unique: true, sparse: true },
     ghanaCardNumber: { type: String, unique: true, sparse: true },
     dateOfBirth: { type: Date },
-    isCompliant: { type: boolean, default: false },
+    isCompliant: { type: Boolean, default: false },
     complianceData: {
       type: {
         dvla: {
-          type: string
+          type: String
         },
         ghanaCard: {
-          type: string
+          type: String
         }
       }
     },
