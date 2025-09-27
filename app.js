@@ -119,11 +119,11 @@ app.post('/ussd', async (req, res) => {
         message = `Hi ${displayName}\n1. View My Details\n2. Lookup Courier\n3. Cancel`;
         userSession = [{ level: 0, message, loggedIn: true, userRef: existing._id.toString() }];
       } else {
-        message = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+        message = "PCRS Couriers Compliance Service\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
         userSession = [{ level: 0, message, loggedIn: false }];
       }
     } catch (e) {
-      message = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+      message = "PCRS Couriers Compliance Service\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
       userSession = [{ level: 0, message, loggedIn: false }];
     }
     saveSession(sessionID, userSession);
@@ -145,7 +145,7 @@ app.post('/ussd', async (req, res) => {
       }
       userSession = [{ level: 0, message, loggedIn: true, userRef: userSession[0]?.userRef }];
     } else {
-      message = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+      message = "PCRS Couriers Compliance Service\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
       userSession = [{ level: 0, message, loggedIn: false }];
     }
     return reply(message, true);
@@ -197,7 +197,7 @@ app.post('/ussd', async (req, res) => {
             userSession.push({ level: 30, message });
             return reply(message, true);
           } else {
-            message = "Session ended.";
+            message = "Thank you for using PCRS Courier Compliance Service.";
             cache.del(sessionID);
             return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
           }
@@ -350,7 +350,7 @@ app.post('/ussd', async (req, res) => {
           cache.del(sessionID);
           return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
         }
-        message = "Registration successful!\n\nAn SMS will be sent to your phone shortly. Please follow the link in the SMS to upload your:\n• DVLA License\n• Ghana Card";
+        message = "Registration successful!\n\nAn SMS will be sent to your phone shortly. Please follow the link in the SMS to upload your:\nDVLA License\nGhana Card";
         cache.del(sessionID);
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
       }
@@ -378,7 +378,7 @@ app.post('/ussd', async (req, res) => {
 
       default: {
         message = "Session reset.";
-        const home = "PCRS Couriers\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
+        const home = "PCRS Couriers Compliance Service\n1. Sign Up\n2. Lookup Courier\n3. Cancel";
         userSession = [{ level: 0, message: home }];
         return reply(home);
       }
@@ -418,6 +418,6 @@ app.get('/courier/lookup', async (req, res) => {
 // =========================
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
-  console.log(`✅ PCRS Courier USSD running on port ${PORT}`);
+  console.log(`✅ PCRS Courier Compliance Service USSD running on port ${PORT}`);
   console.log(`🔗 MongoDB: ${process.env.MONGODB_URI}`);
 });
