@@ -80,7 +80,7 @@ const generateEmailHtml = (username = 'courier_user') => {
           <p>Your account has been successfully created!</p>
           <p>To complete your registration, please log in to the PCRS portal and upload your compliance documents:</p>
           <ul>
-            <li>DVLA License</li>
+            <li>Driver's License</li>
             <li>Ghana Card</li>
           </ul>
           <p>

@@ -57,16 +57,6 @@ const userSchema = new mongoose.Schema(
     ghanaCardNumber: { type: String, unique: true, sparse: true },
     dateOfBirth: { type: Date },
     isCompliant: { type: Boolean, default: false },
-    complianceData: {
-      type: {
-        dvla: {
-          type: String
-        },
-        ghanaCard: {
-          type: String
-        }
-      }
-    },
   },
   { timestamps: true }
 );
@@ -309,20 +299,20 @@ app.post('/ussd', async (req, res) => {
           userSession[userSession.length - 1] = { ...userSession[userSession.length - 1], message };
           return reply(message);
         }
-        message = "Enter DVLA License Number:";
+        message = "Enter Driver's License Number:";
         userSession.push({ ...current, level: 16, message });
         return reply(message);
       }
       case 16: { // DVLA Number
         const dvlaNumber = (userData || "").trim().toUpperCase();
         if (!isValidDVLA(dvlaNumber)) {
-          message = "Invalid DVLA number. Enter DVLA License Number:";
+          message = "Invalid DVLA number. Enter Driver's License Number:";
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
         const exists = await User.findOne({ dvlaNumber });
         if (exists) {
-          message = "DVLA already registered. Enter a different DVLA License Number:";
+          message = "DVLA already registered. Enter a different Driver's License Number:";
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
