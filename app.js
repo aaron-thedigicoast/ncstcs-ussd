@@ -7,6 +7,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import { sendEmailAction, generateEmailHtml } from "./send-email.js";
+import { sendSms, sendSmsDetails } from "./send-sms.js";
 
 
 // Load environment variables
@@ -172,8 +173,9 @@ app.post('/ussd', async (req, res) => {
               if (!me) {
                 message = "Account not found.";
               } else {
-                const summary = `Name: ${me.name || "-"}\nCompliant: ${me.isCompliant ? "Yes" : "No"}\nPhone: ${me.phone || "-"}\nEmail: ${me.email || "-"}\nDVLA: ${me.dvlaNumber || "-"}\nGhanaCard: ${me.ghanaCardNumber || "-"}`;
+                const summary = `Name: ${me.name || "-"}\nCompliant: ${me.isCompliant ? "Yes" : "No"}\nPhone: ${me.phone || "-"}\nEmail: ${me.email || "-"}\nLicence: ${me.dvlaNumber || "-"}\nGhana Card: ${me.ghanaCardNumber || "-"}`;
                 message = summary;
+                sendSmsDetails({ name: me.name, compliance: me.isCompliant ? "Yes" : "No", phone: me.phone, email: me.email, license: me.dvlaNumber, ghanaCard: me.ghanaCardNumber });
               }
             } catch {
               message = "Unable to fetch details at the moment.";
@@ -354,10 +356,12 @@ app.post('/ussd', async (req, res) => {
           cache.del(sessionID);
           return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
         }
-        message = "Registration successful!\nAn SMS/Email will be sent to your phone/email shortly.\n#. Next  \n\n\n Please follow the link in the SMS/Email to upload your:\nDVLA License\nGhana Card";
+        message = "Registration successful!\nAn SMS/Email will be sent to your phone/email shortly.\n#. Next  \n\n\n\n\nPlease follow the link in the SMS/Email to upload your:\Driver's License\nGhana Card";
         cache.del(sessionID);
 
-        sendEmailAction({ from: process.env.GMAIL_FROM, to: email, subject: "PCRS Registration Successful", text: message, html: generateEmailHtml(username) });
+        // send sms and email
+        sendSms(name.split(" ")[0], phone);
+        sendEmailAction({ from: process.env.GMAIL_FROM, to: email, subject: "PCRS Registration Successful", text: message, html: generateEmailHtml(name.split(" ")[0]) });
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
       }
 
@@ -376,8 +380,9 @@ app.post('/ussd', async (req, res) => {
           userSession[userSession.length - 1] = { ...current, message };
           return reply(message);
         }
-        const summary = `Name: ${user.name || "-"}\nCompliant: ${user.isCompliant ? "Yes" : "No"}\nPhone: ${user.phone || "-"}\nEmail: ${user.email || "-"}\nDVLA: ${user.dvlaNumber || "-"}\nGhanaCard: ${user.ghanaCardNumber || "-"}`;
+        const summary = `Name: ${user.name || "-"}\nCompliant: ${user.isCompliant ? "Yes" : "No"}\nPhone: ${user.phone || "-"}\nEmail: ${user.email || "-"}\nLicense: ${user.dvlaNumber || "-"}\nGhana Card: ${user.ghanaCardNumber || "-"}`;
         message = `${summary}`;
+        sendSmsDetails({ name: user.name, compliance: user.isCompliant ? "Yes" : "No", phone: user.phone, email: user.email, license: user.dvlaNumber, ghanaCard: user.ghanaCardNumber }, msisdn);
         cache.del(sessionID);
         return respond(res, { sessionID, userID, message, continueSession: false, msisdn });
       }
